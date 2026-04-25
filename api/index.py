@@ -1,28 +1,27 @@
 from flask import Flask, request, jsonify
 import os
-import requests
 from groq import Groq
 from pinecone import Pinecone
+from huggingface_hub import InferenceClient
 
 app = Flask(__name__)
 
-# Inisialisasi API Keys dari Environment Variables Vercel
+# Inisialisasi API Keys
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
 HF_TOKEN = os.environ.get("HF_TOKEN")
-PINECONE_HOST = os.environ.get("PINECONE_HOST") # Contoh: my-index-1234.svc.pinecone.io
+PINECONE_HOST = os.environ.get("PINECONE_HOST")
 
 # Setup Clients
 groq_client = Groq(api_key=GROQ_API_KEY)
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(host=PINECONE_HOST)
+hf_client = InferenceClient(token=HF_TOKEN)
 
 def get_embedding(text):
-    # Menggunakan Hugging Face API agar ringan (tidak makan storage server)
-    api_url = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2"
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    response = requests.post(api_url, headers=headers, json={"inputs": text})
-    return response.json()
+    # Menggunakan library resmi Hugging Face yang anti-gagal URL
+    vector = hf_client.feature_extraction(text, model="sentence-transformers/all-MiniLM-L6-v2")
+    return vector.tolist() if hasattr(vector, "tolist") else list(vector)
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
@@ -63,8 +62,9 @@ def chat():
         return jsonify({"answer": answer})
 
     except Exception as e:
+        # Jika ada error, ini akan dicetak di Vercel Logs
+        print(f"Error di backend: {str(e)}") 
         return jsonify({"error": str(e)}), 500
 
-# Vercel membutuhkan ini
 if __name__ == '__main__':
     app.run(debug=True)
